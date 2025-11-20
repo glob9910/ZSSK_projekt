@@ -18,6 +18,7 @@ SCHEMAT ALGORYTMU - WIELOWĄTKOWE SITO ERATOSTENESA (WIELOWĄTKOWE WYKREŚLANIE 
 */
 
 import java.util.ArrayList;
+import java.util.BitSet;
 import java.util.List;
 import java.util.concurrent.*;
 
@@ -33,66 +34,94 @@ public class SieveMultiThread {
     }
 
     public List<Integer> findPrimes() throws InterruptedException, ExecutionException {
-        boolean[] isPrime = new boolean[end + 1];
-        for(int i = 2; i <= end; i++) {
-            isPrime[i] = true;
+        if (end < 2) return new ArrayList<>();
+
+        BitSet isPrime = new BitSet(end + 1);
+        isPrime.set(2);
+        for (int i = 3; i <= end; i += 2) {
+            isPrime.set(i);
         }
 
-        // Najpierw sito dla malych liczb (do pierwiastka z end) w jednym wątku
-        // Pozwala to na znalezienie dzielnikow liczb nie-pierwszych. Wielokrotnosci sa wykreslane pozniej na kilku watkach rownolegle
         int sqrt = (int) Math.sqrt(end);
-        for(int i = 2; i <= sqrt; i++) {
-            if(isPrime[i]) {
-                for(int j = i*i; j <= sqrt; j += i) {
-                    isPrime[j] = false;
+
+        for (int i = 3; i <= sqrt; i += 2) {
+            if (isPrime.get(i)) {
+                for (int j = i * i; j <= sqrt; j += 2 * i) {
+                    isPrime.clear(j);
                 }
             }
         }
 
-        List<Integer> basePrimes = new ArrayList<>();   // podstawowe dzielniki
-        for(int i = 2; i <= sqrt; i++) {
-            if(isPrime[i]) basePrimes.add(i);
+        List<Integer> basePrimes = new ArrayList<>();
+        basePrimes.add(2);
+        for (int i = 3; i <= sqrt; i += 2) {
+            if (isPrime.get(i)) basePrimes.add(i);
         }
 
-        // Wielowątkowe usuwanie wielokrotności
-        List<Thread> threads = new ArrayList<>();
+        ExecutorService executor = Executors.newFixedThreadPool(threadCount);
+        List<Future<BitSet>> futures = new ArrayList<>();
 
-        int chunkSize = (end - sqrt) / threadCount + 1;
+        int segmentSize = (end - sqrt) / threadCount + 1;
 
-        for(int t = 0; t < threadCount; t++) {
-            final int from = sqrt + t * chunkSize;
-            final int to = Math.min(end, from + chunkSize - 1);
+        for (int t = 0; t < threadCount; t++) {
+            final int segmentStart = sqrt + 1 + t * segmentSize;
+            final int segmentEnd = Math.min(end, segmentStart + segmentSize - 1);
 
-            Thread thread = new Thread(() -> {
-                // Każdy wątek: dla każdej liczby z basePrimes (dzielniki) usuwa jej wielokrotności w przydzielonym zakresie
-                for(int prime : basePrimes) {
-                    // startMultiple blicza pierwszą wielokrotność liczby prime, która należy do aktualnego fragment zakresu [from, to] (Żeby 2 wątki nie wykreślały tych samych liczb)
-                    // prime * prime = pierwsza liczba, od której zaczynamy wykreślanie wielokrotności
-                    // ((from + prime - 1) / prime) * prime = najmniejsza wielokrotność prime większa lub równa from
-                    int startMultiple = Math.max(prime * prime, ((from + prime - 1) / prime) * prime);
-                    for(int j = startMultiple; j <= to; j += prime) {
-                        isPrime[j] = false;
+            if (segmentStart > end) continue;
+
+            Callable<BitSet> task = () -> {
+                BitSet segment = new BitSet(segmentEnd - segmentStart + 1);
+                segment.set(0, segmentEnd - segmentStart + 1);
+
+                for (int prime : basePrimes) {
+                    if (prime * prime > segmentEnd) break;
+
+                    int startMultiple = Math.max(prime * prime,
+                            ((segmentStart + prime - 1) / prime) * prime);
+
+                    if (prime == 2) {
+                        for (int j = startMultiple; j <= segmentEnd; j += prime) {
+                            if (j >= segmentStart) {
+                                segment.clear(j - segmentStart);
+                            }
+                        }
+                    } else {
+                        if (startMultiple % 2 == 0) startMultiple += prime;
+                        for (int j = startMultiple; j <= segmentEnd; j += 2 * prime) {
+                            if (j >= segmentStart) {
+                                segment.clear(j - segmentStart);
+                            }
+                        }
                     }
                 }
-            });
+                return segment;
+            };
 
-            threads.add(thread);
-            thread.start();
+            futures.add(executor.submit(task));
         }
 
-        // Czekamy, aż wszystkie wątki zakończą pracę
-        for(Thread thread : threads) {
-            try {
-                thread.join();
-            } catch (InterruptedException e) {
-                e.printStackTrace();
+        int currentSegmentStart = sqrt + 1;
+        for (Future<BitSet> future : futures) {
+            BitSet segment = future.get();
+            for (int i = segment.nextSetBit(0); i >= 0; i = segment.nextSetBit(i + 1)) {
+                int actualNumber = currentSegmentStart + i;
+                isPrime.set(actualNumber);
             }
+            currentSegmentStart += segmentSize;
         }
 
-        List<Integer> primes = new ArrayList<>();   // Na razie nie zapisujemy nigdzie wyników
-//        for (int i = start; i <= end; i++) {
-//            if (isPrime[i]) primes.add(i);
-//        }
+        executor.shutdown();
+
+        List<Integer> primes = new ArrayList<>();
+        if (start <= 2) primes.add(2);
+
+        int startIndex = Math.max(start, 3);
+        if (startIndex % 2 == 0) startIndex++;
+
+        for (int i = startIndex; i <= end; i += 2) {
+            if (isPrime.get(i)) primes.add(i);
+        }
+
         return primes;
     }
 }
