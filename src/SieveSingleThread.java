@@ -21,25 +21,73 @@ public class SieveSingleThread {
     }
 
     public List<Integer> findPrimes() {
-        boolean[] isPrime = new boolean[end + 1];   // Utworzenie tablicy o rozmiarze end+1 (dzięki temu nr indeksu = badana liczba)
-        for(int i = 2; i <= end; i++) {
-            isPrime[i] = true;                      // Początkowo ustawiamy wszystkie liczby z zakresu jako pierwsze (w dalszej części wykreślamy liczby nie-pierwsze)
+        if (end < 2) {
+            return new ArrayList<>();
         }
 
-        for(int i = 2; i*i <= end; i++) {
-            if(isPrime[i]) {                        // Sprawdzamy wielokrotności wszystkich liczb (pierwszych) od 2 do pierwiastka z end
-                for(int j = i*i; j <= end; j += i) {
-                    isPrime[j] = false;             // Wykreślamy kolejne wielokrotności
+        boolean[] isPrime = new boolean[end + 1];
+
+        isPrime[2] = true;
+        for (int i = 3; i <= end; i += 2) {
+            isPrime[i] = true;
+        }
+
+        int sqrt = (int) Math.sqrt(end);
+        for (int i = 3; i <= sqrt; i += 2) {
+            if (isPrime[i]) {
+                for (int j = i * i; j <= sqrt; j += 2 * i) {
+                    isPrime[j] = false;
                 }
             }
         }
 
-        List<Integer> primes = new ArrayList<>();   // Zapisanie wyników (na razie donikąd)
-//        for(int i = start; i <= end; i++) {
-//            if(isPrime[i]) {
-//                primes.add(i);
-//            }
-//        }
+        List<Integer> basePrimes = new ArrayList<>();
+        basePrimes.add(2);
+        for (int i = 3; i <= sqrt; i += 2) {
+            if (isPrime[i]) {
+                basePrimes.add(i);
+            }
+        }
+
+        int from = sqrt + 1;
+        int to = end;
+
+        for (int prime : basePrimes) {
+            if (prime * prime > to) break;
+
+            int startMultiple = Math.max(prime * prime,
+                    ((from + prime - 1) / prime) * prime);
+
+            if (prime == 2) {
+                for (int j = startMultiple; j <= to; j += prime) {
+                    if (j <= end) isPrime[j] = false;
+                }
+            } else {
+                if (startMultiple % 2 == 0) {
+                    startMultiple += prime;
+                }
+                for (int j = startMultiple; j <= to; j += 2 * prime) {
+                    if (j <= end) isPrime[j] = false;
+                }
+            }
+        }
+
+        List<Integer> primes = new ArrayList<>();
+        /*if (start <= 2 && end >= 2) {
+            primes.add(2);
+        }
+
+        int startIndex = Math.max(start, 3);
+        if (startIndex % 2 == 0) {
+            startIndex++;
+        }
+
+        for (int i = startIndex; i <= end; i += 2) {
+            if (isPrime[i]) {
+                primes.add(i);
+            }
+        }*/
+
         return primes;
     }
 }
